@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thai TTS Blind A/B — Results</title>
+<style>
+:root{--ink:#19372e;--muted:#687971;--line:#d8e1d8;--paper:#f7f8f3;--green:#1f5c49;--gold:#b88845;--red:#a3402f}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.6 "Segoe UI",Tahoma,"Noto Sans Thai",sans-serif}
+.wrap{width:min(1100px,calc(100% - 32px));margin:0 auto;padding:32px 0 48px}
+h1{font:400 32px/1.2 Georgia,serif;margin:0 0 6px}.sub{color:var(--muted);margin:0 0 22px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.row label{display:flex;flex-direction:column;font-weight:700;font-size:12px;gap:4px;flex:1;min-width:200px}
+input{border:1px solid #cad9cb;border-radius:8px;padding:9px 11px;font:inherit}
+button{border:1px solid var(--green);background:var(--green);color:#fff;border-radius:9px;padding:9px 16px;font:inherit;font-weight:700;cursor:pointer}
+button.ghost{background:#fff;color:var(--green)}button:disabled{opacity:.4;cursor:default}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+.stat b{display:block;font:400 28px Georgia,serif}.stat span{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 10px;border-bottom:1px solid #edf1eb;text-align:left;vertical-align:top}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:#eef2ec;min-width:120px}.bar i{display:block}
+.a{background:var(--green)}.b{background:var(--gold)}.t{background:#b9c6bd}.u{background:#e3e7e1}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:8px 0 0}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+#msg{margin-top:10px;font-weight:700}#msg.err{color:var(--red)}#msg.ok{color:var(--green)}
+.thai{max-width:380px}.muted{color:var(--muted)}
+@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}.thai{max-width:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Thai TTS Blind A/B — ผลรวม</h1>
+  <p class="sub">ดึงผลจากทุกคนที่กด Submit แล้ว (เก็บเฉพาะครั้งล่าสุดของแต่ละเครื่อง) · ดาวน์โหลด JSON รวมส่ง R&amp;D ได้</p>
+
+  <div class="card">
+    <div class="row">
+      <label>Apps Script Web App URL<input id="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+      <label style="max-width:220px">Read key<input id="key" type="password" placeholder="READ_KEY"></label>
+      <button id="load">โหลดผล</button>
+      <button id="dl" class="ghost" disabled>↓ ดาวน์โหลด JSON รวม</button>
+    </div>
+    <div id="msg" class="muted"></div>
+  </div>
+
+  <div id="out" hidden>
+    <div class="stats">
+      <div class="stat"><b id="s-rev">0</b><span>คนที่ส่งผล</span></div>
+      <div class="stat"><b id="s-a">0%</b><span>เลือก Take A (ทุกข้อรวม)</span></div>
+      <div class="stat"><b id="s-b">0%</b><span>เลือก Take B (ทุกข้อรวม)</span></div>
+      <div class="stat"><b id="s-t">0%</b><span>Tie / ตัดสินไม่ได้</span></div>
+    </div>
+    <p class="muted" style="font-size:12px">หมายเหตุ: A/B สลับระบบกันในแต่ละข้อ ใช้ <code>audio_sha256</code> ใน JSON เทียบกับ mapping ของ R&amp;D เพื่อดูว่าระบบไหนชนะ</p>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>ข้อ</th><th>ประโยค</th><th>A</th><th>B</th><th>Tie</th><th>?</th><th>สัดส่วน</th><th>ปัญหาที่ถูกเลือกบ่อย</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="legend"><span><i class="a"></i>A</span><span><i class="b"></i>B</span><span><i class="t"></i>Tie</span><span><i class="u"></i>Cannot decide</span></div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>Reviewer</th><th>ส่งเมื่อ</th><th>ทำครบ</th></tr></thead>
+        <tbody id="rbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let combined=null;
+$("url").value="https://script.google.com/macros/s/AKfycbwKx6384ChZH66mueqE_mC4h__ptHnUKJXsfAhFpkuj4pJKvUPRk8WdVG0o7Lh66yVB/exec";
+function msg(t,cls){$("msg").textContent=t;$("msg").className=cls||"muted";}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+async function load(){
+  const url=$("url").value.trim(),key=$("key").value;
+  if(!/^https:\/\/script\.google\.com\//.test(url)){msg("กรุณาใส่ Web App URL ที่ขึ้นต้นด้วย https://script.google.com/","err");return;}
+  try{localStorage.setItem("tts-results-url",url);}catch{}
+  $("load").disabled=true;msg("กำลังโหลด…");
+  try{
+    const res=await fetch(url+(url.includes("?")?"&":"?")+"key="+encodeURIComponent(key));
+    const d=await res.json();if(!d.ok)throw new Error(d.error||"Server error");
+    combined=d;render(d);$("dl").disabled=false;msg("โหลดแล้ว · "+new Date(d.generated_at).toLocaleString(),"ok");
+  }catch(e){msg("โหลดไม่สำเร็จ: "+e.message,"err");}
+  finally{$("load").disabled=false;}
+}
+function render(d){
+  const cases=new Map(),tot={A:0,B:0,tie:0,unsure:0};
+  for(const s of d.submissions)for(const r of s.reviews||[]){
+    if(!cases.has(r.case_id))cases.set(r.case_id,{id:r.case_id,seq:r.sequence,text:r.prompt_text,A:0,B:0,tie:0,unsure:0,issues:{}});
+    const c=cases.get(r.case_id);
+    if(["A","B","tie","unsure"].includes(r.winner)){c[r.winner]++;tot[r.winner]++;}
+    if(r.main_issue)c.issues[r.main_issue]=(c.issues[r.main_issue]||0)+1;
+  }
+  const all=tot.A+tot.B+tot.tie+tot.unsure||1,pct=n=>Math.round(100*n/all)+"%";
+  $("s-rev").textContent=d.reviewer_count;$("s-a").textContent=pct(tot.A);$("s-b").textContent=pct(tot.B);$("s-t").textContent=pct(tot.tie+tot.unsure);
+  $("tbody").innerHTML=[...cases.values()].sort((a,b)=>a.seq-b.seq).map(c=>{
+    const n=c.A+c.B+c.tie+c.unsure||1,w=k=>(100*c[k]/n)+"%";
+    const iss=Object.entries(c.issues).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([k,v])=>esc(k)+" ("+v+")").join(", ")||"—";
+    return `<tr><td>${esc(c.id)}</td><td class="thai">${esc(c.text)}</td><td class="n">${c.A}</td><td class="n">${c.B}</td><td class="n">${c.tie}</td><td class="n">${c.unsure}</td>
+      <td><div class="bar"><i class="a" style="width:${w("A")}"></i><i class="b" style="width:${w("B")}"></i><i class="t" style="width:${w("tie")}"></i><i class="u" style="width:${w("unsure")}"></i></div></td><td>${iss}</td></tr>`;
+  }).join("");
+  $("rbody").innerHTML=d.submissions.map(s=>`<tr><td>${esc(s.reviewer||"(no name)")}</td><td>${esc(new Date(s.received_at).toLocaleString())}</td><td>${s.completed_cases}/${s.total_cases}</td></tr>`).join("");
+  $("out").hidden=false;
+}
+function download(){
+  if(!combined)return;
+  const blob=new Blob([JSON.stringify(combined,null,2)],{type:"application/json;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="ThaiTTS_blind_combined_"+new Date().toISOString().slice(0,10)+".json";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+}
+$("load").addEventListener("click",load);$("dl").addEventListener("click",download);
+$("key").addEventListener("keydown",e=>{if(e.key==="Enter")load();});
+</script>
+</body>
+</html>
